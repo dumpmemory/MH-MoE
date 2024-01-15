@@ -59,31 +59,32 @@ class BaseTask(object):
             return self.compute_f1(golds, preds)
 
     def get_data_for_fewshot(self, cut_long_sequece=None):
-        src_tokens_train, mlm_src_tokens_train, gpt_input_mask_train, mlm_mask_train, gpt_loss_mask_train, _ = self.tokenized_data('train', cut_long_sequece)
+        # src_tokens_train, mlm_src_tokens_train, gpt_input_mask_train, mlm_mask_train, gpt_loss_mask_train, _ = self.tokenized_data('train', cut_long_sequece)
         src_tokens_valid, mlm_src_tokens_valid, gpt_input_mask_valid, mlm_mask_valid, gpt_loss_mask_valid, labels = self.tokenized_data('valid', cut_long_sequece)
 
-        for i in range(len(labels) // self.class_num):
-            idx_train = np.random.choice(np.arange(min(len(self.dataset_train), self.train_num)), self.k, replace=False)
-            context_src_tokens_list = src_tokens_train[idx_train]
-            mlm_src_tokens_train_list = mlm_src_tokens_train[idx_train]
-            gpt_input_mask_train_list = gpt_input_mask_train[idx_train]
-            mlm_mask_train_list = mlm_mask_train[idx_train]
+        # for i in range(len(labels) // self.class_num):
+        #     idx_train = np.random.choice(np.arange(min(len(self.dataset_train), self.train_num)), self.k, replace=False)
+        #     context_src_tokens_list = src_tokens_train[idx_train]
+        #     # mlm_src_tokens_train_list = mlm_src_tokens_train[idx_train]
+        #     gpt_input_mask_train_list = gpt_input_mask_train[idx_train]
+        #     # mlm_mask_train_list = mlm_mask_train[idx_train]
 
-            context_src_tokens = [0]
-            context_gpt_input_mask = [False]
-            for m in range(self.k):
-                if len(context_src_tokens_list[m]) < (self.gpt_maxlen - len(gpt_input_mask_valid[i*self.class_num])):
-                    context_src_tokens.extend(context_src_tokens_list[m][1:])
-                    context_gpt_input_mask.extend(gpt_input_mask_train_list[m][1:])
+        #     context_src_tokens = [1]
+        #     context_gpt_input_mask = [False]
+        #     for m in range(self.k):
+        #         if len(context_src_tokens_list[m]) < (self.gpt_maxlen - len(gpt_input_mask_valid[i*self.class_num])):
+        #             context_src_tokens.extend(context_src_tokens_list[m][1:])
+        #             context_gpt_input_mask.extend(gpt_input_mask_train_list[m][1:])
 
-            for j in range(i*self.class_num, (i+1)*self.class_num):
-                src_tokens_valid[j] = context_src_tokens + src_tokens_valid[j][1:]
-                mlm_src_tokens_valid[j] = list(mlm_src_tokens_train_list) + [mlm_src_tokens_valid[j]]
-                gpt_input_mask_valid[j] = context_gpt_input_mask + gpt_input_mask_valid[j][1:]
-                mlm_mask_valid[j] = list(mlm_mask_train_list) + [mlm_mask_valid[j]]
-                gpt_loss_mask_valid[j] = [False]*len(context_src_tokens) + gpt_loss_mask_valid[j][1:]
+        #     for j in range(i*self.class_num, (i+1)*self.class_num):
+        #         src_tokens_valid[j] = context_src_tokens + src_tokens_valid[j][1:]
+        #         # mlm_src_tokens_valid[j] = list(mlm_src_tokens_train_list) + [mlm_src_tokens_valid[j]]
+        #         gpt_input_mask_valid[j] = context_gpt_input_mask + gpt_input_mask_valid[j][1:]
+        #         # mlm_mask_valid[j] = list(mlm_mask_train_list) + [mlm_mask_valid[j]]
+        #         gpt_loss_mask_valid[j] = [False]*len(context_src_tokens) + gpt_loss_mask_valid[j][1:]
 
-        return src_tokens_valid, mlm_src_tokens_valid, gpt_input_mask_valid, mlm_mask_valid, gpt_loss_mask_valid, labels
+        # return src_tokens_valid, mlm_src_tokens_valid, gpt_input_mask_valid, mlm_mask_valid, gpt_loss_mask_valid, labels
+        return src_tokens_valid, None, gpt_input_mask_valid, None, gpt_loss_mask_valid, labels
 
 
     def tokenized_data(self, split='train', cut_long_sequece=None):
@@ -101,16 +102,27 @@ class BaseTask(object):
             min_num = self.valid_num if self.prune_valid_set else len(dataset)
 
         def encode(sentence):
-            splitlines = list(filter(None, sentence.splitlines()))
+            sentence = sentence.strip()
             all_tokens = []
-            for line in splitlines:
-                tokens = self.tokenizer.encode(line)
-                # add \n, performs worse
-                # tokens = self.tokenizer.encode(line + '\n')
-                if type(tokens[0]) == int:
-                    tokens = ' '.join(list(map(str, tokens)))
-                all_tokens.append(self.dictionary.encode_line(tokens, add_if_not_exist=False))
+            # tokens = self.tokenizer.encode(sentence)
+            tokens = self.tokenizer.encode(sentence, out_type=str)
+            tokens = ' '.join(tokens)
+            if len(tokens) == 0:
+                return tokens
+            if type(tokens[0]) == int:
+                tokens = ' '.join(list(map(str, tokens)))
+            all_tokens.append(self.dictionary.encode_line(tokens, add_if_not_exist=False))
             return torch.cat(all_tokens).tolist()
+        
+            # splitlines = list(filter(None, sentence.splitlines()))
+            # all_tokens = []
+            # for line in splitlines:
+            #     tokens = self.tokenizer.encode(line)
+            #     if type(tokens[0]) == int:
+            #         tokens = ' '.join(list(map(str, tokens)))
+            #     all_tokens.append(self.dictionary.encode_line(tokens, add_if_not_exist=False))
+            # return torch.cat(all_tokens).tolist()
+        
             # tokens = list(map(str, spm_tokenizer.encode(line + '\n', allowed_special="all")))
             # return torch.cat([self.dictionary.encode_line(self.tokenizer.encode(line), add_if_not_exist=False) for line in splitlines]).tolist()
 
@@ -157,9 +169,9 @@ class BaseTask(object):
                         if len(temp_token) + 5 > cut_long_sequece: # cut the front part
                             cut_num += 1
                             temp_token = temp_token[-cut_long_sequece+5:]
-                        src_tokens.append([0] + temp_token)
+                        src_tokens.append([1] + temp_token)
                     else:
-                        src_tokens.append([0] + input_token + label_token)
+                        src_tokens.append([1] + input_token + label_token)
                     if len(input_token) + 1 > self.mlm_maxlen:
                         mlm_src_tokens.append([0] + input_token[:self.mlm_maxlen-1])
                         gpt_input_mask.append([False] + [True]*(self.mlm_maxlen-1) + [False]*(len(label_token)+len(input_token)-self.mlm_maxlen+1))
@@ -417,4 +429,279 @@ class Winograd(BaseTask):
             input_str.append(text_first+option)
         answer_str = [text_second] * self.class_num
         label = example["label"]
+        return input_str, answer_str, label
+    
+
+class HarnessBaseTask(BaseTask):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_dataname()
+        self.set_class_num()
+        self.base_dir = "/mnt/msranlp/shaohanh/data/fs_eval/harness/"
+        self.dataset_train = self.load_data()
+        self.dataset_valid = self.load_data()
+
+    def load_data(self):
+        import os
+        datasets = []
+        with open(os.path.join(self.base_dir, self.dataname), "r", encoding='utf-8') as fin:
+            for line in fin:
+                obj = json.loads(line)
+                datasets.append(
+                    {
+                        "text": obj["ctx"] if "ctx" in obj else None,
+                        "label": obj["label"] if "label" in obj else None,
+                        "choices": obj["choices"] if "choices" in obj else [],
+                        "gold": obj["gold"] if "gold" in obj else None,
+                        "raw": obj,
+                    }
+                )
+        return datasets
+
+    def set_class_num(self):
+        raise NotImplementedError
+    
+    def set_dataname(self):
+        raise NotImplementedError
+
+    def preprocess_example(self, example):
+        raise NotImplementedError
+    
+
+class HarnessAnlir1(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 3
+
+    def set_dataname(self):
+        self.dataname = "anli_r1"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * self.class_num
+        answer_str = [" True", " Neither", " False"]
+        label = example["label"]
+        return input_str, answer_str, label
+
+class HarnessAnlir2(HarnessAnlir1):
+    def set_dataname(self):
+        self.dataname = "anli_r2"
+
+class HarnessAnlir3(HarnessAnlir1):
+    def set_dataname(self):
+        self.dataname = "anli_r3"
+
+class HarnessArc_challenge(HarnessBaseTask):
+    '''
+    using harness to evaluate arc challenge
+    '''
+    def set_class_num(self):
+        self.class_num = 5
+
+    def set_dataname(self):
+        self.dataname = "arc_challenge"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * len(example["choices"])    
+        answer_str = [' ' + item for item in example["choices"]]
+        label = example["gold"]
+        return input_str, answer_str, label
+
+class HarnessArc_challenge25s(HarnessBaseTask):
+    '''
+    using harness to evaluate arc challenge
+    '''
+    def set_class_num(self):
+        self.class_num = 5
+
+    def set_dataname(self):
+        self.dataname = "arc_challenge_25s"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * len(example["choices"])    
+        answer_str = [' ' + item for item in example["choices"]]
+        label = example["gold"]
+        return input_str, answer_str, label
+
+class HarnessArc_easy(HarnessArc_challenge):
+    def set_class_num(self):
+        self.class_num = 5
+
+    def set_dataname(self):
+        self.dataname = "arc_easy"
+
+class HarnessBoolq(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 2
+
+    def set_dataname(self):
+        self.dataname = "boolq"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * self.class_num
+        answer_str = [" no", " yes"]
+        label = example["label"]
+        return input_str, answer_str, label
+
+class HarnessCopa(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 2
+
+    def set_dataname(self):
+        self.dataname = "copa"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * self.class_num
+        answer_str = [' ' + example['raw']['choice1'], ' ' + example['raw']['choice2']]
+        label = example["label"]
+        return input_str, answer_str, label
+
+class HarnessOpenbookqa(HarnessArc_challenge):
+    def set_class_num(self):
+        self.class_num = 4
+
+    def set_dataname(self):
+        self.dataname = "openbookqa"
+
+class HarnessPiqa(HarnessArc_challenge):
+    def set_class_num(self):
+        self.class_num = 2
+
+    def set_dataname(self):
+        self.dataname = "piqa"
+
+class HarnessRte(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 2
+
+    def set_dataname(self):
+        self.dataname = "rte"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * self.class_num
+        answer_str = [' True', ' False']
+        label = example["label"]
+        return input_str, answer_str, label
+
+class HarnessWic(HarnessRte):
+    def set_dataname(self):
+        self.dataname = "wic"
+
+class HarnessWinogrande(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 2
+
+    def set_dataname(self):
+        self.dataname = "winogrande"
+
+    def preprocess_example(self, example):
+        pronoun_loc = example['raw']['sentence'].index("_")
+        input_str = []
+        input_str.append(example['raw']['sentence'][:pronoun_loc].strip() + ' ' + example['raw']['option1'])
+        input_str.append(example['raw']['sentence'][:pronoun_loc].strip() + ' ' + example['raw']['option2'])
+        answer_str = [" " + example['raw']["sentence"][pronoun_loc + 1:].strip()] * self.class_num
+        label = int(example['raw']['answer']) - 1
+        return input_str, answer_str, label
+
+class HarnessHellaswag(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 4
+
+    def set_dataname(self):
+        self.dataname = "hellaswag"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * self.class_num
+        answer_str = [' ' + item for item in example["choices"]]
+        label = example["gold"]
+        return input_str, answer_str, label
+
+
+class HarnessHellaswag10s(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 4
+
+    def set_dataname(self):
+        self.dataname = "hellaswag_10s"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * self.class_num
+        answer_str = [' ' + item for item in example["choices"]]
+        label = example["gold"]
+        return input_str, answer_str, label
+
+
+class HarnessTruthfullqaMC1(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 1
+
+    def set_dataname(self):
+        self.dataname = "truthfulqa_mc"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * len(example["raw"]["mc1_targets"]["choices"])
+        answer_str = [' ' + item for item in example["raw"]["mc1_targets"]["choices"]]
+        label = 0 # dummy label
+        return input_str, answer_str, label
+    
+
+
+class HarnessTruthfullqaMC2(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 1
+
+    def set_dataname(self):
+        self.dataname = "truthfulqa_mc"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * len(example["raw"]["mc2_targets"]["choices"])
+        answer_str = [' ' + item for item in example["raw"]["mc2_targets"]["choices"]]
+        label = 0 # dummy label
+        return input_str, answer_str, label
+    
+
+class HarnessSCIQ(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 4
+
+    def set_dataname(self):
+        self.dataname = "sciq"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * self.class_num
+        answer_str = [' ' + example["raw"]["distractor1"], 
+                      ' ' + example["raw"]["distractor2"], 
+                      ' ' + example["raw"]["distractor3"], 
+                      ' ' + example["raw"]["correct_answer"]
+                    ]
+        label = 3
+        return input_str, answer_str, label
+    
+    
+class HarnessLambada(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 1
+
+    def set_dataname(self):
+        self.dataname = "lambada_openai"
+
+    def preprocess_example(self, example):
+        input_str = [' '.join(example["raw"]["text"].split(' ')[:-1])] * self.class_num
+        answer_str = [' ' + example["raw"]["text"].split(' ')[-1]]
+        label = 0
+        return input_str, answer_str, label
+
+
+class HarnessRecord(HarnessBaseTask):
+    def set_class_num(self):
+        self.class_num = 1
+
+    def set_dataname(self):
+        self.dataname = "record"
+
+    def preprocess_example(self, example):
+        input_str = [example["text"]] * len(example["raw"]["entities"])
+        answer_str = [f'  - {example["raw"]["query"]}'.replace("@placeholder", item) for item in example["raw"]["entities"]]
+        label = 0 # dummy label
+        return input_str, answer_str, label(example["raw"]["entities"])
+        answer_str = [f'  - {example["raw"]["query"]}'.replace("@placeholder", item) for item in example["raw"]["entities"]]
+        label = 0 # dummy label
         return input_str, answer_str, label
