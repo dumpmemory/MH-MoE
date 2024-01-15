@@ -102,11 +102,13 @@ class BaseTask(object):
             min_num = self.valid_num if self.prune_valid_set else len(dataset)
 
         def encode(sentence):
-            sentence = sentence.strip()
+            
             all_tokens = []
-            # tokens = self.tokenizer.encode(sentence)
-            tokens = self.tokenizer.encode(sentence, out_type=str)
-            tokens = ' '.join(tokens)
+            tokens = self.tokenizer.encode(sentence)
+
+            # sentence = sentence.strip()
+            # tokens = self.tokenizer.encode(sentence, out_type=str)
+            # tokens = ' '.join(tokens)
             if len(tokens) == 0:
                 return tokens
             if type(tokens[0]) == int:
