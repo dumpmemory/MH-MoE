@@ -171,9 +171,9 @@ class BaseTask(object):
                         if len(temp_token) + 5 > cut_long_sequece: # cut the front part
                             cut_num += 1
                             temp_token = temp_token[-cut_long_sequece+5:]
-                        src_tokens.append([1] + temp_token)
+                        src_tokens.append([0] + temp_token)
                     else:
-                        src_tokens.append([1] + input_token + label_token)
+                        src_tokens.append([0] + input_token + label_token)
                     if len(input_token) + 1 > self.mlm_maxlen:
                         mlm_src_tokens.append([0] + input_token[:self.mlm_maxlen-1])
                         gpt_input_mask.append([False] + [True]*(self.mlm_maxlen-1) + [False]*(len(label_token)+len(input_token)-self.mlm_maxlen+1))
