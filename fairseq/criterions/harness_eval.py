@@ -20,13 +20,18 @@ class FewshotEvalConfig(FairseqDataclass):
         default=0,
         metadata={"help":"0: <s> x1 y1 <eos> x2 y2 <eos> x3 [y3],  1: <s> x1 y1 x2 y2 x3 [y3]"}
     )
+    output_type: str = field(
+        default='logit',
+        metadata={"help":"logit or token_id"}
+    )
 
 
-@register_criterion("fs_eval", dataclass=FewshotEvalConfig)
+@register_criterion("harness_eval", dataclass=FewshotEvalConfig)
 class FewshotEvalCriterion(FairseqCriterion):
     def __init__(self, cfg: FewshotEvalConfig, task):
         super().__init__(task)
         self.fewshot_type = cfg.fewshot_type
+        self.output_type = cfg.output_type
         # context examples
         self.context_output = None
         self.context_tokens = None
@@ -80,19 +85,29 @@ class FewshotEvalCriterion(FairseqCriterion):
 
         lprobs = gpt_model.get_normalized_probs(net_output, log_probs=True)
         loss = torch.gather(lprobs, -1, targets).squeeze(-1) * (loss_mask != False).int()
-        loss = loss.sum(-1) / loss_mask.int().sum(-1)
+        # loss = loss.sum(-1) / loss_mask.int().sum(-1)
+        loss = loss.sum(-1)
 
-        true_pred = torch.argmax(lprobs, -1)
+        # true_pred = torch.argmax(lprobs, -1)
+        rank = torch.distributed.get_rank()
+        if rank == 0:
+            if self.output_type == 'logit':
+                print(f'target_logits is {loss.tolist()}')
+            elif self.output_type == 'token_id':
+                print(f'target_logits is {[torch.argmax(lprobs, -1)[loss_mask].tolist(), targets.squeeze(-1)[loss_mask].tolist()]}')
+            else:
+                raise NotImplementedError
+            
         # print(f"targets is {self.decode(targets.squeeze(-1)[0][loss_mask[0]])}")
 
-        option_num = self.task.fewshot_task.class_num
-        fewshot_labels = sample["targets"].view(-1)
+        # option_num = self.task.fewshot_task.class_num
+        # fewshot_labels = sample["targets"].view(-1)
         
-        assert sample["targets"].size(0) % option_num == 0
-        sample_size = sample["targets"].size(0) // option_num
+        # assert sample["targets"].size(0) % option_num == 0
+        sample_size = sample["targets"].size(0)
 
-        pred_label = torch.argmax(loss.view(-1, option_num), dim=1)
-        target_label = fewshot_labels.view(-1, option_num)[:,0]
+        # pred_label = torch.argmax(loss.view(-1, option_num), dim=1)
+        # target_label = fewshot_labels.view(-1, option_num)[:,0]
 
         logging_output = {}
 
@@ -102,9 +117,9 @@ class FewshotEvalCriterion(FairseqCriterion):
                 "ntokens": sample["ntokens"],
                 "nsentences": sample_size,
                 "sample_size": sample_size,
-                "ncorrect": (pred_label == target_label).sum(),
-                "npos": (target_label == 0).sum(),
-                "nneg": (target_label == 1).sum(),
+                "ncorrect": 1,
+                "npos": 1,
+                "nneg": 1,
             }
         )
 

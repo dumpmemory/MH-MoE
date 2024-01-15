@@ -15,16 +15,16 @@ from fairseq.dataclass import FairseqDataclass
 
 
 @dataclass
-class FewshotEvalConfig(FairseqDataclass):
+class FewshotClassificationConfig(FairseqDataclass):
     fewshot_type: int = field(
         default=0,
         metadata={"help":"0: <s> x1 y1 <eos> x2 y2 <eos> x3 [y3],  1: <s> x1 y1 x2 y2 x3 [y3]"}
     )
 
 
-@register_criterion("fs_eval", dataclass=FewshotEvalConfig)
-class FewshotEvalCriterion(FairseqCriterion):
-    def __init__(self, cfg: FewshotEvalConfig, task):
+@register_criterion("fewshotclassification", dataclass=FewshotClassificationConfig)
+class FewshotClassificationCriterion(FairseqCriterion):
+    def __init__(self, cfg: FewshotClassificationConfig, task):
         super().__init__(task)
         self.fewshot_type = cfg.fewshot_type
         # context examples
@@ -55,44 +55,49 @@ class FewshotEvalCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
         model.eval()
-        feature_only = False
-        if hasattr(model, "gpt_model"):
-            feature_only = True
-        
-        net_input = {
-            "src_tokens": sample["net_input"]["src_tokens"].clone(),
-            "src_lengths": sample["net_input"]["src_lengths"].clone(),
-        }
-        net_output, extra = model(
-            # **sample["net_input"],
-            **net_input,
-            features_only=feature_only
-        )
+        if self.context_output is None:
+            self.context_output, self.context_tokens = model.get_context_features(self.task.mlm_tokens, self.task.mlm_mask, self.task.gpt_tokens, self.task.gpt_mask, fewshot_type=self.fewshot_type)
+            self.option_set = self.task.option_set
+
+        if "gpt_mask_second" in sample["net_input"]:
+            net_output, extra = model.purecopy_eval(
+                **sample["net_input"],
+                features_only=True,
+                context_tokens=self.context_tokens,
+                context_output=self.context_output,
+            )
+        else:
+            net_output, extra = model.fewshot_eval(
+                **sample["net_input"],
+                features_only=True,
+                context_tokens=self.context_tokens,
+                context_output=self.context_output,
+            )
             
         net_output = net_output[:, :-1, :]
         net_output = (net_output, extra)
-        targets = sample["net_input"]["src_tokens"][:, 1:].unsqueeze(-1)
-        loss_mask = sample["net_input"]["gpt_loss_mask"][:, 1:]
+        targets = extra["context_tokens"][:, 1:].unsqueeze(-1)
 
-        gpt_model = model
-        if hasattr(model, "gpt_model"):
-            gpt_model = model.gpt_model
+        lprobs = model.gpt_model.get_normalized_probs(net_output, log_probs=True)
+        loss = torch.gather(lprobs, -1, targets).squeeze(-1) * (extra["context_tokens"][:, 1:] != self.task.dictionary.pad()).float()
+        loss = loss.sum(-1)
 
-        lprobs = gpt_model.get_normalized_probs(net_output, log_probs=True)
-        loss = torch.gather(lprobs, -1, targets).squeeze(-1) * (loss_mask != False).int()
-        loss = loss.sum(-1) / loss_mask.int().sum(-1)
-
-        true_pred = torch.argmax(lprobs, -1)
-        # print(f"targets is {self.decode(targets.squeeze(-1)[0][loss_mask[0]])}")
-
-        option_num = self.task.fewshot_task.class_num
+        option_num = len(self.task.option_set)
         fewshot_labels = sample["targets"].view(-1)
         
         assert sample["targets"].size(0) % option_num == 0
         sample_size = sample["targets"].size(0) // option_num
 
         pred_label = torch.argmax(loss.view(-1, option_num), dim=1)
+        print(pred_label)
         target_label = fewshot_labels.view(-1, option_num)[:,0]
+
+        true_pred = torch.argmax(lprobs, -1)
+        # print(f"preds is {true_pred[0][len(self.context_tokens)-5:len(self.context_tokens)+1]}")
+        # print(f"targets is {targets.squeeze(-1)[0][len(self.context_tokens)-5:len(self.context_tokens)+1]}")
+        print(f"preds is {self.decode(true_pred[0][len(self.context_tokens)-30:])}")
+        print(f"targets is {self.decode(targets.squeeze(-1)[0][len(self.context_tokens)-30:])}")
+        print(f"\n")
 
         logging_output = {}
 
@@ -104,7 +109,6 @@ class FewshotEvalCriterion(FairseqCriterion):
                 "sample_size": sample_size,
                 "ncorrect": (pred_label == target_label).sum(),
                 "npos": (target_label == 0).sum(),
-                "nneg": (target_label == 1).sum(),
             }
         )
 
@@ -129,15 +133,11 @@ class FewshotEvalCriterion(FairseqCriterion):
         if len(logging_outputs) > 0 and "ncorrect" in logging_outputs[0]:
             ncorrect = sum(log.get("ncorrect", 0) for log in logging_outputs)
             npos = sum(log.get("npos", 0) for log in logging_outputs)
-            nneg = sum(log.get("nneg", 0) for log in logging_outputs)
             metrics.log_scalar(
                 "accuracy", 100.0 * ncorrect / nsentences, nsentences, round=1
             )
             metrics.log_scalar(
                 "pos_proportion", 100.0 * npos / nsentences, nsentences, round=1
-            )
-            metrics.log_scalar(
-                "neg_proportion", 100.0 * nneg / nsentences, nsentences, round=1
             )
 
     @staticmethod
