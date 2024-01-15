@@ -47,3 +47,8 @@ jobs:
     mpi: True
     process_count_per_node: 1
 ```
+# CPKT PATH
+```
+/mnt1/msranlpintern/wuxun/MoE/MoE_results/NEW_RESULTS/mhmoe_standard_code/base_moe/small-baseline-redstone_v2-flash_attn-8experts
+```
+```
