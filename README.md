@@ -1,4 +1,4 @@
-# X-MoE
+# MH-MoE
 ```
 description: base_moe_8experts
 
